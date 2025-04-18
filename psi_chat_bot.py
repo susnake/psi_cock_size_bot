@@ -186,7 +186,7 @@ def get_main_inline_menu():
     ])
     return keyboard
 
-# Функция генерации изображения (содержит caller-информацию в верхней части)
+# Функция генерации изображения (содержит caller‑информацию в верхней части)
 def generate_whoami_image(weight: int, cock_size: int, iq: int, height: int, caller: str) -> io.BytesIO:
     try:
         try:
@@ -205,14 +205,12 @@ def generate_whoami_image(weight: int, cock_size: int, iq: int, height: int, cal
         text_width = bbox[2] - bbox[0]
         draw.text(((400 - text_width) / 2, 5), caller_text, fill="black", font=font_big)
 
-        # Отрисовка стикмена
-        # Голова
+        # Рисуем стикмена...
         head_center = (200, 100)
         head_radius = 40
         draw.ellipse((head_center[0] - head_radius, head_center[1] - head_radius,
                       head_center[0] + head_radius, head_center[1] + head_radius),
                      outline="black", width=2)
-        # Глаза
         eye_radius = 5
         draw.ellipse((head_center[0] - 15 - eye_radius, head_center[1] - 10 - eye_radius,
                       head_center[0] - 15 + eye_radius, head_center[1] - 10 + eye_radius),
@@ -220,38 +218,25 @@ def generate_whoami_image(weight: int, cock_size: int, iq: int, height: int, cal
         draw.ellipse((head_center[0] + 15 - eye_radius, head_center[1] - 10 - eye_radius,
                       head_center[0] + 15 + eye_radius, head_center[1] - 10 + eye_radius),
                      fill="black")
-        # Грустный рот
         draw.arc((head_center[0] - 20, head_center[1], head_center[0] + 20, head_center[1] + 30),
                  start=210, end=330, fill="black", width=2)
 
-        # Туловище (прямоугольник)
-        torso_top = 140
-        torso_bottom = 250
-        torso_width = 20
+        torso_top, torso_bottom, torso_width = 140, 250, 20
         draw.rectangle((200 - torso_width, torso_top, 200 + torso_width, torso_bottom),
                        outline="black", width=2)
-
-        # Руки (от левого и правого углов туловища)
         left_arm_start = (200 - torso_width, torso_top)
         right_arm_start = (200 + torso_width, torso_top)
         left_arm_end = (left_arm_start[0] - 40, left_arm_start[1] + 40)
         right_arm_end = (right_arm_start[0] + 40, right_arm_start[1] + 40)
         draw.line((left_arm_start, left_arm_end), fill="black", width=2)
         draw.line((right_arm_start, right_arm_end), fill="black", width=2)
-
-        # Ноги (от центра нижней части туловища)
         leg_y = torso_bottom
-        left_leg_end = (200 - 30, leg_y + 70)
-        right_leg_end = (200 + 30, leg_y + 70)
-        draw.line((200, leg_y, left_leg_end[0], left_leg_end[1]), fill="black", width=2)
-        draw.line((200, leg_y, right_leg_end[0], right_leg_end[1]), fill="black", width=2)
+        draw.line((200, leg_y, 200 - 30, leg_y + 70), fill="black", width=2)
+        draw.line((200, leg_y, 200 + 30, leg_y + 70), fill="black", width=2)
 
-        # "Длина хуя": вертикальная линия от нижней части туловища
-        cock_length = cock_size
-        draw.line((200, torso_bottom, 200, torso_bottom + cock_length),
-                  fill="black", width=2)
+        # Длина хуя
+        draw.line((200, torso_bottom, 200, torso_bottom + cock_size), fill="black", width=2)
 
-        # Текст с параметрами в нижней части
         text_lines = [
             f"Вес: {weight} кг",
             f"Длина хуя: {cock_size} см",
@@ -271,7 +256,7 @@ def generate_whoami_image(weight: int, cock_size: int, iq: int, height: int, cal
         logger.exception("Ошибка при генерации изображения")
         raise
 
-# Класс-обертка для FSInputFile
+# Обёртка для отправки файлов
 class MyFSInputFile(FSInputFile):
     def read(self, *args, **kwargs):
         with open(self.path, "rb") as f:
@@ -295,7 +280,7 @@ async def process_callback(callback_query: types.CallbackQuery):
     action = callback_query.data
     logger.debug(f"Callback '{action}' от пользователя {user_id} в чате {chat_id}")
 
-    # Формируем caller-информацию для всех не-inline кнопок
+    # Формируем caller‑информацию
     caller = callback_query.from_user.full_name or callback_query.from_user.username or str(user_id)
 
     if action == "weight":
@@ -305,9 +290,7 @@ async def process_callback(callback_query: types.CallbackQuery):
         else:
             weight, emoji = generate_weight_message()
             cache[key] = (now, weight, emoji)
-        # Сообщение вида: <caller>'s weight is <value> <emoji>
         await bot.send_message(chat_id, f"{caller}'s weight is {weight} kg {emoji}")
-        await callback_query.answer()
 
     elif action == "cock":
         key = f"cock_{user_id}"
@@ -317,27 +300,24 @@ async def process_callback(callback_query: types.CallbackQuery):
             size, emoji = generate_cock_size_message()
             cache[key] = (now, size, emoji)
         await bot.send_message(chat_id, f"{caller}'s cock size is {size} cm {emoji}")
-        await callback_query.answer()
 
     elif action == "iq":
         key = f"iq_{user_id}"
         if key in cache and now - cache[key][0] <= CACHE_EXPIRATION:
-            _, iq, emoji = cache[key]
+            _, iq_val, emoji = cache[key]
         else:
-            iq, emoji = generate_iq_message()
-            cache[key] = (now, iq, emoji)
-        await bot.send_message(chat_id, f"{caller}'s IQ is {iq} {emoji}")
-        await callback_query.answer()
+            iq_val, emoji = generate_iq_message()
+            cache[key] = (now, iq_val, emoji)
+        await bot.send_message(chat_id, f"{caller}'s IQ is {iq_val} {emoji}")
 
     elif action == "height":
         key = f"height_{user_id}"
         if key in cache and now - cache[key][0] <= CACHE_EXPIRATION:
-            _, height, emoji = cache[key]
+            _, height_val, emoji = cache[key]
         else:
-            height, emoji = generate_height_message()
-            cache[key] = (now, height, emoji)
-        await bot.send_message(chat_id, f"{caller}'s height is {height} cm {emoji}")
-        await callback_query.answer()
+            height_val, emoji = generate_height_message()
+            cache[key] = (now, height_val, emoji)
+        await bot.send_message(chat_id, f"{caller}'s height is {height_val} cm {emoji}")
 
     elif action == "whoami":
         param_funcs = {
@@ -356,27 +336,21 @@ async def process_callback(callback_query: types.CallbackQuery):
                 cache[key] = (now, val, _)
             results[attr] = val
 
-        weight = results["weight"]
-        cock_size = results["cock"]
-        iq_val = results["iq"]
-        height_val = results["height"]
-
-        # Генерируем изображение с caller, которое отображается на картинке (в верхней части)
-        photo_bytes = generate_whoami_image(weight, cock_size, iq_val, height_val, caller)
-
-        # Подпись к фото: ровно "Хто я?"
-        caption = "Хто я?"
-
+        w = results["weight"]
+        c = results["cock"]
+        iq_v = results["iq"]
+        h = results["height"]
+        photo_bytes = generate_whoami_image(w, c, iq_v, h, caller)
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
             tmp.write(photo_bytes.getvalue())
             tmp_path = tmp.name
         try:
             photo_file = MyFSInputFile(tmp_path, filename="whoami.png")
-            await bot.send_photo(chat_id, photo_file, caption=caption)
+            await bot.send_photo(chat_id, photo_file, caption="Хто я?")
         finally:
             os.remove(tmp_path)
 
-        await callback_query.answer()
+    await callback_query.answer()
 
 @dp.chat_member(F.new_chat_members.is_bot & F.new_chat_members.id == bot.id)
 async def on_bot_added(event: ChatMemberUpdated):
@@ -391,6 +365,7 @@ async def inline_mode(query: types.InlineQuery):
     clean_cache()
     articles = []
 
+    # weight result
     key = f"weight_{user_id}"
     if key in cache and now - cache[key][0] <= CACHE_EXPIRATION:
         _, weight, weight_text = cache[key]
@@ -406,6 +381,7 @@ async def inline_mode(query: types.InlineQuery):
         description="Получите ваш случайный вес"
     ))
 
+    # cock size result
     key = f"cock_{user_id}"
     if key in cache and now - cache[key][0] <= CACHE_EXPIRATION:
         _, cock_size, cock_text = cache[key]
@@ -421,41 +397,44 @@ async def inline_mode(query: types.InlineQuery):
         description="Получите ваш случайный размер"
     ))
 
+    # IQ result
     key = f"iq_{user_id}"
     if key in cache and now - cache[key][0] <= CACHE_EXPIRATION:
-        _, iq, iq_text = cache[key]
+        _, iq_val, iq_text = cache[key]
     else:
-        iq, iq_text = generate_iq_message()
-        cache[key] = (now, iq, iq_text)
+        iq_val, iq_text = generate_iq_message()
+        cache[key] = (now, iq_val, iq_text)
     articles.append(InlineQueryResultArticle(
         id=hashlib.md5(f"iq_{iq_text}".encode()).hexdigest(),
         title="Проверь свой IQ",
         input_message_content=InputTextMessageContent(
-            message_text=f"My IQ is {iq} {iq_text}"
+            message_text=f"My IQ is {iq_val} {iq_text}"
         ),
         description="Получите ваш случайный IQ"
     ))
 
+    # height result
     key = f"height_{user_id}"
     if key in cache and now - cache[key][0] <= CACHE_EXPIRATION:
-        _, height, height_text = cache[key]
+        _, height_val, height_text = cache[key]
     else:
-        height, height_text = generate_height_message()
-        cache[key] = (now, height, height_text)
+        height_val, height_text = generate_height_message()
+        cache[key] = (now, height_val, height_text)
     articles.append(InlineQueryResultArticle(
         id=hashlib.md5(f"height_{height_text}".encode()).hexdigest(),
         title="Проверь свой рост",
         input_message_content=InputTextMessageContent(
-            message_text=f"My height is {height} cm {height_text}"
+            message_text=f"My height is {height_val} cm {height_text}"
         ),
         description="Получите ваш случайный рост"
     ))
 
+    # combined
     combined_message = (
         f"My weight is {weight} kg {weight_text}\n"
         f"My cock size is {cock_size} cm {cock_text}\n"
-        f"My IQ is {iq} {iq_text}\n"
-        f"My height is {height} cm {height_text}"
+        f"My IQ is {iq_val} {iq_text}\n"
+        f"My height is {height_val} cm {height_text}"
     )
     articles.append(InlineQueryResultArticle(
         id=hashlib.md5(f"whoami_{user_id}".encode()).hexdigest(),
@@ -468,9 +447,36 @@ async def inline_mode(query: types.InlineQuery):
 
     await query.answer(articles, cache_time=1)
 
+# Обработчик команды /pizdica без inline‑кнопки
+@dp.message(Command(commands=["pizdica"]))
+async def command_pizdica(message: types.Message):
+    caller = message.from_user
+    p1 = f"@{caller.username}" if caller.username else caller.full_name
+
+    # Если ответ на сообщение
+    if message.reply_to_message:
+        u2 = message.reply_to_message.from_user
+        p2 = f"@{u2.username}" if u2.username else u2.full_name
+    else:
+        # всё, что после команды
+        parts = message.text.strip().split(maxsplit=1)
+        if len(parts) > 1:
+            p2 = parts[1]
+        else:
+            await message.reply(
+        "Ответьте на сообщение того, с кем хотите попиздица, "
+        "или сразу укажите его ник после команды, например:\n"
+        "/pizdica @username"
+    )
+            return
+
+    winner = random.choice([p1, p2])
+    await message.reply(f"{p1} и {p2} пиздились за гаражами\nПобедитель - {winner}\n🏆🏆🏆")
+
 async def main():
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
+
