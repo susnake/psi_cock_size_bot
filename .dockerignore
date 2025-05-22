@@ -1,0 +1,19 @@
+# VCS
+.git
+.hg
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual envs
+env/
+venv/
+
+# IDE
+.idea/
+.vscode/
+
+# Tests & docs
+tests/
+*.md
