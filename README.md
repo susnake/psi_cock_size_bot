@@ -1,5 +1,5 @@
 # psi_cock_size_bot
-![image](https://github.com/user-attachments/assets/487a5df1-a084-4b0d-8589-988d83cc6e0a)
+![image](https://github.com/user-attachments/assets/abecc6d9-ec3e-46c4-ae6b-f2f09ef209fb)
 
 git clone https://github.com/susnake/psi_cock_size_bot.git
 
