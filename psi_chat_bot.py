@@ -1,482 +1,240 @@
-import os
-import random
-import hashlib
-import asyncio
-import sys
-import logging
-import io
-import tempfile
-from datetime import datetime, timedelta
-from dotenv import load_dotenv
+#!/usr/bin/env python3
+# psi_chat_bot.py — Telegram-бот «Кто я?» с кэшированием картинки на 6 часов
+# Python 3.10+, aiogram 3.7+, Pydantic v2
 
+import os, sys, io, random, base64, hashlib, asyncio, logging, requests
+from datetime import datetime, timedelta
+from typing import Dict, Tuple, Callable
+
+from dotenv import load_dotenv; load_dotenv()
 from PIL import Image, ImageDraw, ImageFont
 
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import (
-    InlineQuery,
-    InlineQueryResultArticle,
-    InputTextMessageContent,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-    ChatMemberUpdated
-)
-from aiogram.types.input_file import FSInputFile
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
-from aiogram.dispatcher.middlewares.base import BaseMiddleware
-from aiogram import F
-
-# Загрузка переменных окружения из .env файла
-load_dotenv()
-
-# Настройка логирования: вывод в файл и на консоль
-LOG_DIR = "/var/log/psi_chat_bot"
-LOG_FILE = os.path.join(LOG_DIR, "psi_chat_bot.log")
-try:
-    os.makedirs(LOG_DIR, exist_ok=True)
-except Exception as e:
-    print(f"Не удалось создать каталог {LOG_DIR}: {e}. Будет использован /tmp для логирования.")
-    LOG_FILE = "/tmp/psi_chat_bot.log"
-
-LOG_FORMAT = '%(asctime)s - %(levelname)s - %(name)s - %(message)s (%(filename)s:%(lineno)d)'
-DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
-logging.basicConfig(
-    level=logging.DEBUG,
-    format=LOG_FORMAT,
-    datefmt=DATE_FORMAT,
-    handlers=[
-        logging.FileHandler(LOG_FILE, mode='a', encoding='utf-8'),
-        logging.StreamHandler(sys.stdout)
-    ]
+from aiogram.enums import ParseMode
+from aiogram.client.default import DefaultBotProperties
+from aiogram.types import (
+    InlineKeyboardMarkup, InlineKeyboardButton,
+    InputTextMessageContent, InlineQueryResultArticle,
+    BufferedInputFile, ChatMemberUpdated,
 )
-logger = logging.getLogger("psi_chat_bot")
-logger.info("Запуск бота")
 
-API_TOKEN = os.getenv("psi_chat_bot")
+# ─────────── базовое ───────────
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+log = logging.getLogger("psi_chat_bot")
+
+API_TOKEN      = os.getenv("psi_chat_bot")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not API_TOKEN:
-    logger.error("Нет переменной окружения psi_chat_bot")
-    raise ValueError("Нет переменной окружения psi_chat_bot")
+    sys.exit("❌ В .env нет psi_chat_bot")
 
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher()
+bot = Bot(token=API_TOKEN,
+          default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+dp  = Dispatcher()
 
-# Время хранения результатов в кэше
-CACHE_EXPIRATION = timedelta(hours=6)
-cache = {}
+# ─────────── кэш чисел и картинок ───────────
+TTL = timedelta(hours=6)
 
-# Словари с эмодзи для параметров
-weight_messages = {
-    "0": ["🪶"],
-    "1-49": ["🦴"],
-    "50-99": ["⚖️"],
-    "100-149": ["🏋️‍♂️"],
-    "150-199": ["🐖"],
-    "200-249": ["🤯"],
-    "250": ["🐘"]
+# числовые параметры  key → (ts, value, emoji)
+cache: Dict[str, Tuple[datetime, int, str]] = {}
+# PNG-картинки        uid → (ts, bytes)
+img_cache: Dict[int, Tuple[datetime, bytes]] = {}
+
+# ─────────── генераторы значений ───────────
+EMO = {
+    "w":{"0":"🪶","1-49":"🦴","50-99":"⚖️","100-149":"🏋️‍♂️",
+         "150-199":"🐖","200-249":"🤯","250":"🐘"},
+    "c":{"0":"🤤","1-9":"🤮","10-19":"🥴","20-29":"😐",
+         "30-39":"😲","40-49":"🤯","50":"🫡"},
+    "iq":{"50-69":"🤡","70-89":"😕","90-109":"🙂",
+          "110-129":"😎","130-149":"🤓","150-200":"🧠"},
+    "h":{"140-149":"🦗","150-169":"🙂","170-189":"😃","190-219":"🏀"}
 }
-cock_size_messages = {
-    "0": ["🤤"],
-    "1-9": ["🤮"],
-    "10-19": ["🥴"],
-    "20-29": ["😐"],
-    "30-39": ["😲"],
-    "40-49": ["🤯"],
-    "50": ["🫡"]
-}
-iq_messages = {
-    "50-69": ["🤡", "😞"],
-    "70-89": ["😕", "🤔"],
-    "90-109": ["🙂", "😌"],
-    "110-129": ["😎", "💡"],
-    "130-149": ["🤓", "🔥"],
-    "150-200": ["🧠", "🚀"]
-}
-height_messages = {
-    "140-149": ["🦗", "🐜"],
-    "150-169": ["🙂", "👍"],
-    "170-189": ["😃", "👌"],
-    "190-219": ["🏀", "🚀"]
-}
+def _emo(val:int, tbl):                       # подобрать эмодзи
+    for rng,e in tbl.items():
+        if "-" in rng:
+            a,b = map(int,rng.split("-"));      # type: ignore
+            if a<=val<=b: return e
+        elif int(rng)==val:
+            return e
+    return ""
 
-def generate_weight_message():
-    weight = random.randint(0, 250)
-    if weight == 0:
-        category = "0"
-    elif weight <= 49:
-        category = "1-49"
-    elif weight <= 99:
-        category = "50-99"
-    elif weight <= 149:
-        category = "100-149"
-    elif weight <= 199:
-        category = "150-199"
-    elif weight <= 249:
-        category = "200-249"
+def gen_w():  v=random.randint(0,250);  return v,_emo(v,EMO["w"])
+def gen_c():  v=random.randint(0,50);   return v,_emo(v,EMO["c"])
+def gen_iq(): v=random.randint(50,200); return v,_emo(v,EMO["iq"]) or ("👨‍🔬" if v==200 else "")
+def gen_h():  v=random.randint(140,220);return v,_emo(v,EMO["h"]) or ("🇷🇸" if v==220 else "")
+
+gens = {"weight":gen_w, "cock":gen_c, "iq":gen_iq, "height":gen_h}
+
+def cached_val(uid:int,label:str):
+    now=datetime.now(); key=f"{label}_{uid}"
+    if key in cache and now-cache[key][0] <= TTL:
+        _,v,e = cache[key]
     else:
-        category = "250"
-    message = random.choice(weight_messages[category])
-    return weight, message
+        v,e = gens[label](); cache[key]=(now,v,e)
+    return v,e
 
-def generate_cock_size_message():
-    size = random.randint(0, 50)
-    if size == 0:
-        category = "0"
-    elif size <= 9:
-        category = "1-9"
-    elif size <= 19:
-        category = "10-19"
-    elif size <= 29:
-        category = "20-29"
-    elif size <= 39:
-        category = "30-39"
-    elif size <= 49:
-        category = "40-49"
-    else:
-        category = "50"
-    message = random.choice(cock_size_messages[category])
-    return size, message
+# ─────────── клавиатура ───────────
+KB = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="Вес",      callback_data="weight"),
+     InlineKeyboardButton(text="хуеметр",  callback_data="cock")],
+    [InlineKeyboardButton(text="IQ",       callback_data="iq"),
+     InlineKeyboardButton(text="Рост",     callback_data="height")],
+    [InlineKeyboardButton(text="Хто Я?",   callback_data="whoami")]
+])
 
-def generate_iq_message():
-    iq = random.randint(50, 200)
-    if iq == 200:
-        return iq, "👨‍🔬"
-    if iq < 70:
-        category = "50-69"
-    elif iq < 90:
-        category = "70-89"
-    elif iq < 110:
-        category = "90-109"
-    elif iq < 130:
-        category = "110-129"
-    elif iq < 150:
-        category = "130-149"
-    else:
-        category = "150-200"
-    message = random.choice(iq_messages[category])
-    return iq, message
+# ─────────── Gemini REST ───────────
+GEN_URL=("https://generativelanguage.googleapis.com/v1beta/"
+         "models/gemini-2.0-flash-preview-image-generation:generateContent")
 
-def generate_height_message():
-    height = random.randint(140, 220)
-    if height == 220:
-        return height, "🇷🇸"
-    elif height < 150:
-        category = "140-149"
-    elif height < 170:
-        category = "150-169"
-    elif height < 190:
-        category = "170-189"
-    else:
-        category = "190-219"
-    message = random.choice(height_messages[category])
-    return height, message
+def gemini_png(prompt:str)->bytes:
+    if not GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY не задан")
+    r=requests.post(
+        f"{GEN_URL}?key={GEMINI_API_KEY}",
+        headers={"Content-Type":"application/json"},
+        json={
+            "contents":[{"parts":[{"text":prompt}]}],
+            "generationConfig":{"responseModalities":["TEXT","IMAGE"]}
+        }, timeout=30
+    )
+    if r.status_code!=200:
+        raise RuntimeError(f"HTTP {r.status_code}: {r.text}")
+    data=r.json()
+    if data["candidates"][0].get("finishReason")=="IMAGE_SAFETY":
+        raise RuntimeError("IMAGE_SAFETY")
+    for part in data["candidates"][0]["content"]["parts"]:
+        if "inlineData" in part:
+            return base64.b64decode(part["inlineData"]["data"])
+    raise RuntimeError("нет изображения")
 
-def clean_cache():
-    now = datetime.now()
-    for key, (timestamp, _, _) in list(cache.items()):
-        if now - timestamp > CACHE_EXPIRATION:
-            del cache[key]
-            logger.debug(f"Удалён ключ из кэша: {key}")
+def prompt_primary(ctx:dict)->str:
+    return (
+        "Draw a clean flat cartoon avatar, transparent PNG. "
+        f"Height {ctx['h']} cm, weight {ctx['w']} kg. "
+        f"Floating yellow tape-measure on the right shows “{ctx['c']} cm”. "
+        f"Thought bubble: “IQ {ctx['iq']}”. "
+        f"Write “{ctx['name']}” under the feet. Fully clothed. No nudity."
+    )
 
-def get_main_inline_menu():
-    keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text="Вес", callback_data="weight"),
-         types.InlineKeyboardButton(text="хуеметр", callback_data="cock")],
-        [types.InlineKeyboardButton(text="IQ", callback_data="iq"),
-         types.InlineKeyboardButton(text="Рост", callback_data="height")],
-        [types.InlineKeyboardButton(text="Хто Я?", callback_data="whoami")]
-    ])
-    return keyboard
+def prompt_safe(ctx:dict)->str:
+    return (
+        "Draw a clean flat cartoon avatar, transparent PNG. "
+        f"Height {ctx['h']} cm, weight {ctx['w']} kg. "
+        f"Thought bubble: “IQ {ctx['iq']}”. "
+        f"Write “{ctx['name']}” under the feet. Fully clothed."
+    )
 
-# Функция генерации изображения (содержит caller‑информацию в верхней части)
-def generate_whoami_image(weight: int, cock_size: int, iq: int, height: int, caller: str) -> io.BytesIO:
+async def make_image(ctx:dict)->io.BytesIO:
+    loop=asyncio.get_running_loop()
     try:
-        try:
-            font_big = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", size=24)
-            font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", size=14)
-        except Exception:
-            font_big = ImageFont.load_default()
-            font_small = ImageFont.load_default()
+        data=await loop.run_in_executor(None, gemini_png, prompt_primary(ctx))
+    except RuntimeError as e:
+        if "IMAGE_SAFETY" in str(e):
+            data=await loop.run_in_executor(None, gemini_png, prompt_safe(ctx))
+        else:
+            raise
+    bio=io.BytesIO(data); bio.seek(0); return bio
 
-        img = Image.new("RGB", (400, 400), "white")
-        draw = ImageDraw.Draw(img)
+# ─────────── PIL fallback ───────────
+def render_pil(ctx:dict)->io.BytesIO:
+    try: font=ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",18)
+    except IOError: font=ImageFont.load_default()
+    img=Image.new("RGB",(400,400),"white")
+    d=ImageDraw.Draw(img)
+    d.text((10,5),ctx["name"],font=font,fill="black")
+    head,r=(200,100),40
+    d.ellipse((head[0]-r,head[1]-r,head[0]+r,head[1]+r),outline="black",width=2)
+    d.rectangle((180,140,220,250),outline="black",width=2)
+    d.line((180,140,140,180),fill="black",width=2)
+    d.line((220,140,260,180),fill="black",width=2)
+    d.line((200,250,170,320),fill="black",width=2)
+    d.line((200,250,230,320),fill="black",width=2)
+    d.line((200,250,200,250+ctx['c']),fill="black",width=2)
+    y=330
+    for t in (f"Вес: {ctx['w']} кг",
+              f"Длина: {ctx['c']} см",
+              f"IQ: {ctx['iq']}",
+              f"Рост: {ctx['h']} см"):
+        d.text((10,y),t,font=font,fill="black"); y+=18
+    bio=io.BytesIO(); img.save(bio,"PNG"); bio.seek(0); return bio
 
-        # Верхняя надпись: caller-информация, центрированная
-        caller_text = caller
-        bbox = draw.textbbox((0, 0), caller_text, font=font_big)
-        text_width = bbox[2] - bbox[0]
-        draw.text(((400 - text_width) / 2, 5), caller_text, fill="black", font=font_big)
-
-        # Рисуем стикмена...
-        head_center = (200, 100)
-        head_radius = 40
-        draw.ellipse((head_center[0] - head_radius, head_center[1] - head_radius,
-                      head_center[0] + head_radius, head_center[1] + head_radius),
-                     outline="black", width=2)
-        eye_radius = 5
-        draw.ellipse((head_center[0] - 15 - eye_radius, head_center[1] - 10 - eye_radius,
-                      head_center[0] - 15 + eye_radius, head_center[1] - 10 + eye_radius),
-                     fill="black")
-        draw.ellipse((head_center[0] + 15 - eye_radius, head_center[1] - 10 - eye_radius,
-                      head_center[0] + 15 + eye_radius, head_center[1] - 10 + eye_radius),
-                     fill="black")
-        draw.arc((head_center[0] - 20, head_center[1], head_center[0] + 20, head_center[1] + 30),
-                 start=210, end=330, fill="black", width=2)
-
-        torso_top, torso_bottom, torso_width = 140, 250, 20
-        draw.rectangle((200 - torso_width, torso_top, 200 + torso_width, torso_bottom),
-                       outline="black", width=2)
-        left_arm_start = (200 - torso_width, torso_top)
-        right_arm_start = (200 + torso_width, torso_top)
-        left_arm_end = (left_arm_start[0] - 40, left_arm_start[1] + 40)
-        right_arm_end = (right_arm_start[0] + 40, right_arm_start[1] + 40)
-        draw.line((left_arm_start, left_arm_end), fill="black", width=2)
-        draw.line((right_arm_start, right_arm_end), fill="black", width=2)
-        leg_y = torso_bottom
-        draw.line((200, leg_y, 200 - 30, leg_y + 70), fill="black", width=2)
-        draw.line((200, leg_y, 200 + 30, leg_y + 70), fill="black", width=2)
-
-        # Длина хуя
-        draw.line((200, torso_bottom, 200, torso_bottom + cock_size), fill="black", width=2)
-
-        text_lines = [
-            f"Вес: {weight} кг",
-            f"Длина хуя: {cock_size} см",
-            f"IQ: {iq}",
-            f"Рост: {height} см"
-        ]
-        y_text = 330
-        for line in text_lines:
-            draw.text((10, y_text), line, fill="black", font=font_small)
-            y_text += 15
-
-        bio = io.BytesIO()
-        img.save(bio, format="PNG")
-        bio.seek(0)
-        return bio
-    except Exception as e:
-        logger.exception("Ошибка при генерации изображения")
-        raise
-
-# Обёртка для отправки файлов
-class MyFSInputFile(FSInputFile):
-    def read(self, *args, **kwargs):
-        with open(self.path, "rb") as f:
-            return f.read()
-
+# ─────────── handlers ───────────
 @dp.message(CommandStart())
-async def send_welcome(message: types.Message):
-    logger.info(f"Получена команда /start от пользователя {message.from_user.id}")
-    await message.answer("Добро пожаловать!", reply_markup=get_main_inline_menu())
+async def start(m:types.Message):
+    await m.answer("Добро пожаловать!", reply_markup=KB)
 
-@dp.message(Command(commands=["menu"]))
-async def send_menu(message: types.Message):
-    logger.info(f"Получена команда /menu от пользователя {message.from_user.id}")
-    await message.answer("Выберите действие:", reply_markup=get_main_inline_menu())
+@dp.message(Command("menu"))
+async def menu(m:types.Message):
+    await m.answer("Выберите действие:", reply_markup=KB)
 
-@dp.callback_query(F.data.in_({"weight", "cock", "iq", "height", "whoami"}))
-async def process_callback(callback_query: types.CallbackQuery):
-    now = datetime.now()
-    user_id = callback_query.from_user.id
-    chat_id = callback_query.message.chat.id
-    action = callback_query.data
-    logger.debug(f"Callback '{action}' от пользователя {user_id} в чате {chat_id}")
+@dp.callback_query(F.data.in_({"weight","cock","iq","height","whoami"}))
+async def callbacks(cb:types.CallbackQuery):
+    uid  = cb.from_user.id
+    name = cb.from_user.full_name or cb.from_user.username or str(uid)
+    chat = cb.message.chat.id
+    act  = cb.data
 
-    # Формируем caller‑информацию
-    caller = callback_query.from_user.full_name or callback_query.from_user.username or str(user_id)
+    if act!="whoami":
+        val,emo = cached_val(uid,act)
+        unit="kg" if act=="weight" else "cm"
+        await bot.send_message(chat,f"{name}'s {act} is {val} {unit} {emo}")
+        await cb.answer(); return
 
-    if action == "weight":
-        key = f"weight_{user_id}"
-        if key in cache and now - cache[key][0] <= CACHE_EXPIRATION:
-            _, weight, emoji = cache[key]
-        else:
-            weight, emoji = generate_weight_message()
-            cache[key] = (now, weight, emoji)
-        await bot.send_message(chat_id, f"{caller}'s weight is {weight} kg {emoji}")
+    # --- ХТО Я? ---
+    w,_  = cached_val(uid,"weight")
+    c,_  = cached_val(uid,"cock")
+    iq,_ = cached_val(uid,"iq")
+    h,_  = cached_val(uid,"height")
+    ctx  = {"w":w,"c":c,"iq":iq,"h":h,"name":name}
 
-    elif action == "cock":
-        key = f"cock_{user_id}"
-        if key in cache and now - cache[key][0] <= CACHE_EXPIRATION:
-            _, size, emoji = cache[key]
-        else:
-            size, emoji = generate_cock_size_message()
-            cache[key] = (now, size, emoji)
-        await bot.send_message(chat_id, f"{caller}'s cock size is {size} cm {emoji}")
-
-    elif action == "iq":
-        key = f"iq_{user_id}"
-        if key in cache and now - cache[key][0] <= CACHE_EXPIRATION:
-            _, iq_val, emoji = cache[key]
-        else:
-            iq_val, emoji = generate_iq_message()
-            cache[key] = (now, iq_val, emoji)
-        await bot.send_message(chat_id, f"{caller}'s IQ is {iq_val} {emoji}")
-
-    elif action == "height":
-        key = f"height_{user_id}"
-        if key in cache and now - cache[key][0] <= CACHE_EXPIRATION:
-            _, height_val, emoji = cache[key]
-        else:
-            height_val, emoji = generate_height_message()
-            cache[key] = (now, height_val, emoji)
-        await bot.send_message(chat_id, f"{caller}'s height is {height_val} cm {emoji}")
-
-    elif action == "whoami":
-        param_funcs = {
-            "weight": generate_weight_message,
-            "cock": generate_cock_size_message,
-            "iq": generate_iq_message,
-            "height": generate_height_message
-        }
-        results = {}
-        for attr, func in param_funcs.items():
-            key = f"{attr}_{user_id}"
-            if key in cache and now - cache[key][0] <= CACHE_EXPIRATION:
-                _, val, _ = cache[key]
-            else:
-                val, _ = func()
-                cache[key] = (now, val, _)
-            results[attr] = val
-
-        w = results["weight"]
-        c = results["cock"]
-        iq_v = results["iq"]
-        h = results["height"]
-        photo_bytes = generate_whoami_image(w, c, iq_v, h, caller)
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-            tmp.write(photo_bytes.getvalue())
-            tmp_path = tmp.name
+    now=datetime.now()
+    if uid in img_cache and now-img_cache[uid][0] <= TTL:
+        bio = io.BytesIO(img_cache[uid][1])
+    else:
         try:
-            photo_file = MyFSInputFile(tmp_path, filename="whoami.png")
-            await bot.send_photo(chat_id, photo_file, caption="Хто я?")
-        finally:
-            os.remove(tmp_path)
+            bio = await make_image(ctx)
+        except Exception as e:
+            log.error("Gemini error → PIL fallback: %s", e)
+            bio = render_pil(ctx)
+        img_cache[uid]=(now,bio.getvalue())
 
-    await callback_query.answer()
+    await bot.send_photo(chat,BufferedInputFile(bio.getvalue(),"whoami.png"),
+                         caption="Хто я?")
+    await cb.answer()
 
 @dp.chat_member(F.new_chat_members.is_bot & F.new_chat_members.id == bot.id)
-async def on_bot_added(event: ChatMemberUpdated):
-    chat_id = event.chat.id
-    logger.info(f"Бот добавлен в чат {chat_id}")
-    await bot.send_message(chat_id, "Привет! Я ваш бот. Выберите действие:", reply_markup=get_main_inline_menu())
+async def added(ev:ChatMemberUpdated):
+    await bot.send_message(ev.chat.id,"Привет! Я бот.",reply_markup=KB)
 
 @dp.inline_query()
-async def inline_mode(query: types.InlineQuery):
-    user_id = query.from_user.id
-    now = datetime.now()
-    clean_cache()
-    articles = []
+async def inline(q:types.InlineQuery):
+    uid=q.from_user.id
+    w,wt=cached_val(uid,"weight")
+    c,ct=cached_val(uid,"cock")
+    iq,iqt=cached_val(uid,"iq")
+    h,ht=cached_val(uid,"height")
+    def art(t,msg,sfx):
+        return InlineQueryResultArticle(
+            id=hashlib.md5(f"{t}{sfx}".encode()).hexdigest(),
+            title=t,input_message_content=InputTextMessageContent(message_text=msg))
+    await q.answer([
+        art("Вес",     f"My weight is {w} kg {wt}","w"),
+        art("Хуеметр", f"My cock size is {c} cm {ct}","c"),
+        art("IQ",      f"My IQ is {iq} {iqt}","i"),
+        art("Рост",    f"My height is {h} cm {ht}","h"),
+        art("Хто я?",  (f"My weight is {w} kg {wt}\n"
+                        f"My cock size is {c} cm {ct}\n"
+                        f"My IQ is {iq} {iqt}\n"
+                        f"My height is {h} cm {ht}"),"all")
+    ],cache_time=1)
 
-    # weight result
-    key = f"weight_{user_id}"
-    if key in cache and now - cache[key][0] <= CACHE_EXPIRATION:
-        _, weight, weight_text = cache[key]
-    else:
-        weight, weight_text = generate_weight_message()
-        cache[key] = (now, weight, weight_text)
-    articles.append(InlineQueryResultArticle(
-        id=hashlib.md5(f"weight_{weight_text}".encode()).hexdigest(),
-        title="Проверь свой вес",
-        input_message_content=InputTextMessageContent(
-            message_text=f"My weight is {weight} kg {weight_text}"
-        ),
-        description="Получите ваш случайный вес"
-    ))
-
-    # cock size result
-    key = f"cock_{user_id}"
-    if key in cache and now - cache[key][0] <= CACHE_EXPIRATION:
-        _, cock_size, cock_text = cache[key]
-    else:
-        cock_size, cock_text = generate_cock_size_message()
-        cache[key] = (now, cock_size, cock_text)
-    articles.append(InlineQueryResultArticle(
-        id=hashlib.md5(f"cock_{cock_text}".encode()).hexdigest(),
-        title="Проверь свой хуеметр",
-        input_message_content=InputTextMessageContent(
-            message_text=f"My cock size is {cock_size} cm {cock_text}"
-        ),
-        description="Получите ваш случайный размер"
-    ))
-
-    # IQ result
-    key = f"iq_{user_id}"
-    if key in cache and now - cache[key][0] <= CACHE_EXPIRATION:
-        _, iq_val, iq_text = cache[key]
-    else:
-        iq_val, iq_text = generate_iq_message()
-        cache[key] = (now, iq_val, iq_text)
-    articles.append(InlineQueryResultArticle(
-        id=hashlib.md5(f"iq_{iq_text}".encode()).hexdigest(),
-        title="Проверь свой IQ",
-        input_message_content=InputTextMessageContent(
-            message_text=f"My IQ is {iq_val} {iq_text}"
-        ),
-        description="Получите ваш случайный IQ"
-    ))
-
-    # height result
-    key = f"height_{user_id}"
-    if key in cache and now - cache[key][0] <= CACHE_EXPIRATION:
-        _, height_val, height_text = cache[key]
-    else:
-        height_val, height_text = generate_height_message()
-        cache[key] = (now, height_val, height_text)
-    articles.append(InlineQueryResultArticle(
-        id=hashlib.md5(f"height_{height_text}".encode()).hexdigest(),
-        title="Проверь свой рост",
-        input_message_content=InputTextMessageContent(
-            message_text=f"My height is {height_val} cm {height_text}"
-        ),
-        description="Получите ваш случайный рост"
-    ))
-
-    # combined
-    combined_message = (
-        f"My weight is {weight} kg {weight_text}\n"
-        f"My cock size is {cock_size} cm {cock_text}\n"
-        f"My IQ is {iq_val} {iq_text}\n"
-        f"My height is {height_val} cm {height_text}"
-    )
-    articles.append(InlineQueryResultArticle(
-        id=hashlib.md5(f"whoami_{user_id}".encode()).hexdigest(),
-        title="Хто я?",
-        input_message_content=InputTextMessageContent(
-            message_text=combined_message
-        ),
-        description="Получите все характеристики сразу"
-    ))
-
-    await query.answer(articles, cache_time=1)
-
-# Обработчик команды /pizdica без inline‑кнопки
-@dp.message(Command(commands=["pizdica"]))
-async def command_pizdica(message: types.Message):
-    caller = message.from_user
-    p1 = f"@{caller.username}" if caller.username else caller.full_name
-
-    # Если ответ на сообщение
-    if message.reply_to_message:
-        u2 = message.reply_to_message.from_user
-        p2 = f"@{u2.username}" if u2.username else u2.full_name
-    else:
-        # всё, что после команды
-        parts = message.text.strip().split(maxsplit=1)
-        if len(parts) > 1:
-            p2 = parts[1]
-        else:
-            await message.reply(
-        "Ответьте на сообщение того, с кем хотите попиздица, "
-        "или сразу укажите его ник после команды, например:\n"
-        "/pizdica @username"
-    )
-            return
-
-    winner = random.choice([p1, p2])
-    await message.reply(f"{p1} и {p2} пиздились за гаражами\nПобедитель - {winner}\n🏆🏆🏆")
-
+# ─────────── run ───────────
 async def main():
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
-if __name__ == "__main__":
+if __name__=="__main__":
     asyncio.run(main())
 
