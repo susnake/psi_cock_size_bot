@@ -7,6 +7,11 @@ git clone https://github.com/susnake/psi_cock_size_bot.git
 
 cd psi_cock_size_bot
 
-vim .env            # впишите psi_chat_bot=<telegram_token>  и GEMINI_API_KEY=<GEMINI_API_KEY>
+vim .env            # впишите:
+psi_chat_bot=YOUR_TELEGRAM_TOKEN
+STORAGE_CHAT_ID=YOUR_CHAT_ID
+IMAGE_SERVER_URL=YOUR_HTTP_SERVER
+GEMINI_API_KEY=YOUR_GEMINI_KEY
+SSL_EMAIL=YOUR_EMAIL
 
 docker run -d --name psi-bot --restart unless-stopped --env-file .env susnake/psi_cock_size_bot:latest
