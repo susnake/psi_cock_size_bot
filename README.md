@@ -10,6 +10,10 @@
   * «Хуй» (см)
   * IQ (без единиц)
   * Рост (см)
+
+![image](https://github.com/user-attachments/assets/290c69e6-91d4-4541-9eb4-9c8e77b9604b)
+
+    
 * Поддержка двух режимов работы:
 
   1. **Storage Mode** — картинки сохраняются в Telegram-канале (используется `STORAGE_CHAT_ID`), не требуется внешнего HTTP-сервера.
