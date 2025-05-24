@@ -11,7 +11,7 @@
   * IQ (без единиц)
   * Рост (см)
 
-![image](https://github.com/user-attachments/assets/290c69e6-91d4-4541-9eb4-9c8e77b9604b)
+![image](https://github.com/user-attachments/assets/5da44df2-1ea7-457a-a132-f9f29a6b56bd)
 
     
 * Поддержка двух режимов работы:
