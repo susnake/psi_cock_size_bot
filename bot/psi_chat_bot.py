@@ -192,24 +192,24 @@ def _generate_text_proof_sync(user_text: str, model_name: str = DEFAULT_TEXT_MOD
         "contents": [{"parts": [{"text": full_prompt}]}],
         # ----- НАЧАЛО ПРИМЕРА НАСТРОЕК БЕЗОПАСНОСТИ (safetySettings) -----
         # Раскомментируйте и настройте этот блок, ЕСЛИ ВЫ ПОНИМАЕТЕ РИСКИ.
-         "safetySettings": [
-             {
-                 "category": "HARM_CATEGORY_HARASSMENT",
-                 "threshold": "BLOCK_NONE" 
-             },
-             {
-                 "category": "HARM_CATEGORY_HATE_SPEECH",
-                 "threshold": "BLOCK_NONE"
-             },
-             {
-                 "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                 "threshold": "BLOCK_NONE" 
-             },
-             {
-                 "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                 "threshold": "BLOCK_NONE"
-             }
-         ]
+        # "safetySettings": [
+        #     {
+        #         "category": "HARM_CATEGORY_HARASSMENT",
+        #         "threshold": "BLOCK_NONE" 
+        #     },
+        #     {
+        #         "category": "HARM_CATEGORY_HATE_SPEECH",
+        #         "threshold": "BLOCK_NONE"
+        #     },
+        #     {
+        #         "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+        #         "threshold": "BLOCK_NONE" 
+        #     },
+        #     {
+        #         "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+        #         "threshold": "BLOCK_NONE"
+        #     }
+        # ]
         # ----- КОНЕЦ ПРИМЕРА НАСТРОЕК БЕЗОПАСНОСТИ -----
     }
 
@@ -358,12 +358,12 @@ async def proof_command_handler(message: types.Message, command: CommandObject):
         )
         return
 
-    if len(text_to_proof) < 3:
+    if len(text_to_proof) < 10: 
         await message.reply("Текст для поиска информации слишком короткий. Пожалуйста, предоставьте более развернутый запрос.") 
         return
     
-    if len(text_to_proof) > 4096:
-        await message.reply("Текст для поиска информации слишком длинный (макс. 4096 символов). Пожалуйста, сократите его.") 
+    if len(text_to_proof) > 3000: 
+        await message.reply("Текст для поиска информации слишком длинный (макс. 3000 символов). Пожалуйста, сократите его.") 
         return
     
     processing_message = await message.reply("Идет поиск информации... Пожалуйста, подождите. ⌛") 
@@ -542,4 +542,3 @@ if __name__=="__main__":
     if sys.platform == "win32": 
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     asyncio.run(main())
-
