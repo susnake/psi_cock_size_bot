@@ -45,6 +45,8 @@ psi_chat_bot=YOUR_TELEGRAM_TOKEN      # токен, полученный у BotF
 STORAGE_CHAT_ID=YOUR_CHAT_ID         # ID канала или чата для хранения изображений
 IMAGE_SERVER_URL=https://your.domain # URL вашего HTTP-сервера (без слэша в конце)
 GEMINI_API_KEY=YOUR_GEMINI_KEY       # Ключ Google Gemini API
+GOOGLE_API_KEY=                      # Ключи для поиска, которые можно взять отсюда 
+GOOGLE_CSE_ID=                       # https://programmablesearchengine.google.com/
 ```
 
 * **Storage Mode**:
