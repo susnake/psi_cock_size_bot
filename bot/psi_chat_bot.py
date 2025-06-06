@@ -9,7 +9,12 @@ import json
 from datetime import datetime, timedelta
 from typing import Dict, Tuple, Callable, List, Optional
 
-from bs4 import BeautifulSoup
+# --- НОВЫЙ ИМПОРТ ДЛЯ ПАРСИНГА СТРАНИЦ ---
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    sys.exit("Библиотека BeautifulSoup4 не установлена. Пожалуйста, установите ее: pip install beautifulsoup4 lxml")
+
 
 from dotenv import load_dotenv; load_dotenv()
 from PIL import Image, ImageDraw, ImageFont
@@ -60,14 +65,15 @@ cache: Dict[str, Tuple[datetime, int, str]] = {}
 img_cache: Dict[int, Tuple[datetime, bytes]] = {}
 
 # ─────────── Генераторы значений ───────────
+# ИСПРАВЛЕНО: Все значения теперь в словаре EMO
 EMO = {
     "w":{"0":"🪶","1-49":"🦴","50-99":"⚖️","100-149":"🏋️‍♂️",
          "150-199":"🐖","200-249":"🤯","250":"🐘"},
     "c":{"0":"🤤","1-9":"🤮","10-19":"🥴","20-29":"😐",
          "30-39":"😲","40-49":"🤯","50":"🫡"},
     "iq":{"50-69":"🤡","70-89":"😕","90-109":"🙂",
-          "110-129":"😎","130-149":"🤓","150-200":"🧠"},
-    "h":{"140-149":"🦗","150-169":"🙂","170-189":"😃","190-219":"🏀"}
+          "110-129":"😎","130-149":"🤓","150-199":"🧠", "200":"👨‍🔬"},
+    "h":{"140-149":"🦗","150-169":"🙂","170-189":"😃","190-219":"🏀", "220":"🇷🇸"}
 }
 def _emo(val:int, tbl):
     for rng,e in tbl.items():
@@ -78,10 +84,11 @@ def _emo(val:int, tbl):
             return e
     return ""
 
+# ИСПРАВЛЕНО: Функции-генераторы приведены к единому виду
 def gen_w():  v=random.randint(0,250);  return v,_emo(v,EMO["w"])
 def gen_c():  v=random.randint(0,50);   return v,_emo(v,EMO["c"])
-def gen_iq(): v=random.randint(50,200); return v,_emo(v,EMO["iq"]) or ("👨‍🔬" if v==200 else "")
-def gen_h():  v=random.randint(140,220);return v,_emo(v,EMO["h"]) or ("🇷🇸" if v==220 else "")
+def gen_iq(): v=random.randint(50,200); return v,_emo(v,EMO["iq"])
+def gen_h():  v=random.randint(140,220);return v,_emo(v,EMO["h"])
 
 gens = {"weight":gen_w, "cock":gen_c, "iq":gen_iq, "height":gen_h}
 
@@ -177,7 +184,7 @@ def _fetch_and_parse_url(url: str) -> str:
         log.error(f"Не удалось получить или распарсить контент со страницы {url}: {e}")
         return ""
 
-def search_google(query: str) -> list[dict]: 
+def search_google(query: str) -> list[dict]:
     """Выполняет поиск и возвращает список словарей с результатами."""
     if not GOOGLE_API_KEY or not GOOGLE_CSE_ID:
         raise RuntimeError("GOOGLE_API_KEY или GOOGLE_CSE_ID не настроены.")
@@ -298,32 +305,32 @@ async def menu(m:types.Message):
     await m.answer("Выберите действие:", reply_markup=KB, parse_mode=None)
 
 @dp.message(Command("pizdica", "cock"))
-async def cmd_pizdica(m:types.Message, command: CommandObject):
-    caller = m.from_user
-    p1 = f"@{caller.username}" if caller.username else caller.full_name
-
-    target_user = None
-    if m.reply_to_message:
-        target_user = m.reply_to_message.from_user
+async def cmd_pizdica(message: types.Message, command: CommandObject):
+    p1_user = message.from_user
+    p1_name = f"@{p1_user.username}" if p1_user.username else p1_user.full_name
+    
+    p2_name = None
+    if message.reply_to_message and message.reply_to_message.from_user:
+        p2_user = message.reply_to_message.from_user
+        p2_name = f"@{p2_user.username}" if p2_user.username else p2_user.full_name
     elif command.args:
-        # Простая проверка на упоминание @username
-        if command.args.startswith('@'):
-            p2 = command.args
-            winner = random.choice([p1, p2])
-            winner_display = winner.lstrip('@')
-            await m.reply(f"{p1} vs {p2} — победитель: {winner_display} 🏆", parse_mode=None)
-            return
+        p2_name = command.args.strip()
 
-    if target_user:
-        p2 = f"@{target_user.username}" if target_user.username else target_user.full_name
-        winner = random.choice([p1, p2])
+    if p2_name:
+        winner = random.choice([p1_name, p2_name])
         winner_display = winner.lstrip('@')
-        await m.reply(f"{p1} vs {p2} — победитель: {winner_display} 🏆", parse_mode=None)
-    else: # Если нет ни реплая, ни упоминания
-        uid  = m.from_user.id
-        name = m.from_user.full_name or m.from_user.username or str(uid)
-        val,emo = cached_val(uid,"cock")
-        await m.answer(f"{name}, ваш хуй: {val} см {emo}", parse_mode=None)
+        await message.reply(
+            f"{p1_name} и {p2_name} пиздились за гаражами до первой крови\n"
+            f"Победитель — {winner_display} 🏆🏆🏆", 
+            parse_mode=None
+        )
+    else: 
+        await message.reply(
+            "Для дуэли используйте команду в ответ на чье-либо сообщение или укажите оппонента после команды, например:\n"
+            "`/pizdica @username`\n"
+            "`/pizdica Текст`",
+            parse_mode=None
+        )
 
 
 @dp.callback_query(F.data.in_({"weight","cock","iq","height","whoami", "proof_help"}))
