@@ -22,19 +22,19 @@ services:
 volumes:
   psi-bot-data:
 
-    # Секреты читаются из локальных файлов
-    # Создайте папку secrets/ и положите туда файлы с токенами
-    # Каждый файл содержит ТОЛЬКО токен (без пробелов и переносов)
+    # Секреты берутся из /opt/psi-secrets/ — вне репозитория
+    # Это позволяет делать git clone без потери секретов
+    # На VPS создайте папку: mkdir -p /opt/psi-secrets
 secrets:
   psi_chat_bot:
-    file: ./secrets/psi_chat_bot.txt
+    file: /opt/psi-secrets/psi_chat_bot.txt
   GEMINI_API_KEY:
-    file: ./secrets/GEMINI_API_KEY.txt
+    file: /opt/psi-secrets/GEMINI_API_KEY.txt
   GOOGLE_API_KEY:
-    file: ./secrets/GOOGLE_API_KEY.txt
+    file: /opt/psi-secrets/GOOGLE_API_KEY.txt
   GOOGLE_CSE_ID:
-    file: ./secrets/GOOGLE_CSE_ID.txt
+    file: /opt/psi-secrets/GOOGLE_CSE_ID.txt
   STORAGE_CHAT_ID:
-    file: ./secrets/STORAGE_CHAT_ID.txt
+    file: /opt/psi-secrets/STORAGE_CHAT_ID.txt
   IMAGE_SERVER_URL:
-    file: ./secrets/IMAGE_SERVER_URL.txt
+    file: /opt/psi-secrets/IMAGE_SERVER_URL.txt
