@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # ─────────── Telegram бот ───────────
   psi-bot:
     build:
       context: ./bot
@@ -8,7 +9,6 @@ services:
     container_name: psi-bot
     restart: unless-stopped
     volumes:
-      # Персистентное хранение данных (кэш, лимиты API)
       - psi-bot-data:/app/data
     secrets:
       - psi_chat_bot
@@ -18,12 +18,30 @@ services:
       - STORAGE_CHAT_ID
       - IMAGE_SERVER_URL
 
-# Именованный volume для данных
+  # ─────────── HTTP-сервер для изображений ───────────
+  psi-http:
+    build:
+      context: ./http
+      dockerfile: Dockerfile
+    container_name: psi-http
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - IMAGE_SERVER_URL=${IMAGE_SERVER_URL:-https://your-domain.com}
+      - SSL_EMAIL=${SSL_EMAIL:-}
+    volumes:
+      - psi-http-images:/var/www/html/images
+      - psi-http-letsencrypt:/etc/letsencrypt
+
+# Volumes
 volumes:
   psi-bot-data:
+  psi-http-images:
+  psi-http-letsencrypt:
 
     # Секреты из ./secrets/ (скопируйте из secrets.example/ при первом деплое)
-    # secrets/ в .gitignore — не перезаписываются при git pull
 secrets:
   psi_chat_bot:
     file: ./secrets/psi_chat_bot.txt
