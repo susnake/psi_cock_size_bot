@@ -1,9 +1,23 @@
 #!/bin/bash
 set -e # Любая команда, завершившаяся с ошибкой, немедленно прервет выполнение скрипта
 
-# 1. DOMAIN из IMAGE_SERVER_URL
+# Функция для чтения секрета (Docker Secrets или env variable)
+get_secret() {
+  local name="$1"
+  local secret_file="/run/secrets/$name"
+  if [ -f "$secret_file" ]; then
+    cat "$secret_file"
+  else
+    printenv "$name" 2>/dev/null || echo ""
+  fi
+}
+
+# 1. DOMAIN из IMAGE_SERVER_URL (из Docker Secrets или env)
+IMAGE_SERVER_URL=$(get_secret "IMAGE_SERVER_URL")
+SSL_EMAIL=$(get_secret "SSL_EMAIL")
+
 if [ -z "$IMAGE_SERVER_URL" ]; then
-  echo "FATAL: Переменная IMAGE_SERVER_URL не задана."
+  echo "FATAL: Переменная IMAGE_SERVER_URL не задана (ни в Docker Secrets, ни в env)."
   exit 1
 fi
 DOMAIN=$(echo "$IMAGE_SERVER_URL" | sed -E 's~https?://([^/]+)/?.*~\1~')

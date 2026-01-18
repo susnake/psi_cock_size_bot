@@ -22,9 +22,9 @@ services:
     ports:
       - "80:80"
       - "443:443"
-    environment:
-      - IMAGE_SERVER_URL=${IMAGE_SERVER_URL:-https://your-domain.com}
-      - SSL_EMAIL=${SSL_EMAIL:-}
+    secrets:
+      - IMAGE_SERVER_URL
+      - SSL_EMAIL
     volumes:
       - psi-http-images:/var/www/html/images
       - psi-http-letsencrypt:/etc/letsencrypt
@@ -35,7 +35,7 @@ volumes:
   psi-http-images:
   psi-http-letsencrypt:
 
-    # Секреты из ./secrets/
+    # Секреты
 secrets:
   psi_chat_bot:
     file: ./secrets/psi_chat_bot.txt
@@ -49,3 +49,5 @@ secrets:
     file: ./secrets/STORAGE_CHAT_ID.txt
   IMAGE_SERVER_URL:
     file: ./secrets/IMAGE_SERVER_URL.txt
+  SSL_EMAIL:
+    file: ./secrets/SSL_EMAIL.txt
