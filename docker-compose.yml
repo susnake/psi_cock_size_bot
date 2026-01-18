@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  psi-bot:
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    container_name: psi-bot
+    restart: unless-stopped
+    volumes:
+      # Персистентное хранение данных (кэш, лимиты API)
+      - psi-bot-data:/app/data
+    secrets:
+      - psi_chat_bot
+      - GEMINI_API_KEY
+      - GOOGLE_API_KEY
+      - GOOGLE_CSE_ID
+
+# Именованный volume для данных
+volumes:
+  psi-bot-data:
+
+    # Секреты читаются из локальных файлов
+    # Создайте папку secrets/ и положите туда файлы с токенами
+    # Каждый файл содержит ТОЛЬКО токен (без пробелов и переносов)
+secrets:
+  psi_chat_bot:
+    file: ./secrets/psi_chat_bot.txt
+  GEMINI_API_KEY:
+    file: ./secrets/GEMINI_API_KEY.txt
+  GOOGLE_API_KEY:
+    file: ./secrets/GOOGLE_API_KEY.txt
+  GOOGLE_CSE_ID:
+    file: ./secrets/GOOGLE_CSE_ID.txt
