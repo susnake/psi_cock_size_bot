@@ -240,7 +240,7 @@ KB = InlineKeyboardMarkup(inline_keyboard=[
         InlineKeyboardButton(text="Рост", callback_data="height")
     ],
     [InlineKeyboardButton(text="Хто Я?", callback_data="whoami")],
-    [InlineKeyboardButton(text="Пруф?", callback_data="proof_help")]
+#    [InlineKeyboardButton(text="Пруф?", callback_data="proof_help")]
 ])
 
 # ─────────── Генерация изображений ───────────
