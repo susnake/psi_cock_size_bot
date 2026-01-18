@@ -244,7 +244,7 @@ KB = InlineKeyboardMarkup(inline_keyboard=[
 ])
 
 # ─────────── Генерация изображений ───────────
-IMG_GEN_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent"
+IMG_GEN_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent"
 
 
 async def gemini_png(session: aiohttp.ClientSession, prompt: str) -> bytes:
