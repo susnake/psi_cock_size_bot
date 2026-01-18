@@ -79,11 +79,23 @@ GEMINI_API_KEY = get_secret("GEMINI_API_KEY")
 GOOGLE_API_KEY = get_secret("GOOGLE_API_KEY")
 GOOGLE_CSE_ID = get_secret("GOOGLE_CSE_ID")
 
+# Режимы хостинга изображений
+STORAGE_CHAT_ID = get_secret("STORAGE_CHAT_ID")  # ID канала для хранения (Storage Mode)
+IMAGE_SERVER_URL = get_secret("IMAGE_SERVER_URL")  # URL HTTP-сервера (HTTP Mode)
+
 if not API_TOKEN:
     sys.exit("❌ psi_chat_bot не найден (ни в Docker Secrets, ни в переменных окружения)")
 
 if not GEMINI_API_KEY:
     log.warning("⚠️ GEMINI_API_KEY не найден. Функции Gemini не будут работать.")
+
+# Определяем режим хостинга
+if STORAGE_CHAT_ID:
+    log.info(f"Режим хостинга: Storage Mode (канал {STORAGE_CHAT_ID})")
+elif IMAGE_SERVER_URL:
+    log.info(f"Режим хостинга: HTTP Mode ({IMAGE_SERVER_URL})")
+else:
+    log.info("Режим хостинга: In-Memory (изображения не сохраняются)")
 
 # ─────────── Пути для данных ───────────
 DATA_DIR = Path("/app/data") if os.path.exists("/app") else Path("./data")
@@ -344,7 +356,85 @@ def render_pil(ctx: dict) -> io.BytesIO:
     return bio
 
 
-# ─────────── Лимиты API ───────────
+# ─────────── Хостинг изображений ───────────
+async def upload_to_storage(img_data: bytes, filename: str) -> Optional[str]:
+    """
+    Storage Mode: Загружает изображение в Telegram канал.
+    Возвращает file_id для последующего использования.
+    """
+    if not STORAGE_CHAT_ID:
+        return None
+
+    try:
+        chat_id = int(STORAGE_CHAT_ID)
+        msg = await bot.send_photo(
+            chat_id,
+            BufferedInputFile(img_data, filename),
+            caption=f"🖼 {filename}"
+        )
+        file_id = msg.photo[-1].file_id
+        log.info(f"Изображение загружено в Storage (file_id: {file_id[:20]}...)")
+        return file_id
+    except Exception as e:
+        log.error(f"Ошибка загрузки в Storage: {e}")
+        return None
+
+
+async def upload_to_http_server(
+    session: aiohttp.ClientSession,
+    img_data: bytes,
+    filename: str
+) -> Optional[str]:
+    """
+    HTTP Mode: Загружает изображение на HTTP-сервер.
+    Возвращает URL изображения.
+    """
+    if not IMAGE_SERVER_URL:
+        return None
+
+    try:
+        upload_url = f"{IMAGE_SERVER_URL.rstrip('/')}/upload.php"
+
+        form = aiohttp.FormData()
+        form.add_field(
+            'image',
+            img_data,
+            filename=filename,
+            content_type='image/png'
+        )
+
+        async with session.post(upload_url, data=form, timeout=30) as resp:
+            if resp.status == 200:
+                result = await resp.json()
+                if result.get('success'):
+                    url = result.get('url', f"{IMAGE_SERVER_URL}/{filename}")
+                    log.info(f"Изображение загружено на HTTP-сервер: {url}")
+                    return url
+            log.error(f"HTTP upload failed: {resp.status} - {await resp.text()}")
+            return None
+    except Exception as e:
+        log.error(f"Ошибка загрузки на HTTP-сервер: {e}")
+        return None
+
+
+async def store_image(img_data: bytes, uid: int) -> Optional[str]:
+    """
+    Сохраняет изображение согласно настроенному режиму хостинга.
+    Возвращает file_id или URL, или None для In-Memory режима.
+    """
+    filename = f"whoami_{uid}_{int(datetime.now().timestamp())}.png"
+
+    if STORAGE_CHAT_ID:
+        return await upload_to_storage(img_data, filename)
+
+    if IMAGE_SERVER_URL:
+        async with aiohttp.ClientSession() as session:
+            return await upload_to_http_server(session, img_data, filename)
+
+    return None  # In-Memory режим
+
+
+
 async def check_api_limit_and_increment() -> Tuple[bool, str]:
     """Проверяет и обновляет дневной лимит использования API."""
     async with api_usage_lock:
