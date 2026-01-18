@@ -1,11 +1,7 @@
-version: '3.8'
-
 services:
   # ─────────── Telegram бот ───────────
   psi-bot:
-    build:
-      context: ./bot
-      dockerfile: Dockerfile
+    image: susnake/psi_cock_size_bot:latest
     container_name: psi-bot
     restart: unless-stopped
     volumes:
@@ -20,9 +16,7 @@ services:
 
   # ─────────── HTTP-сервер для изображений ───────────
   psi-http:
-    build:
-      context: ./http
-      dockerfile: Dockerfile
+    image: susnake/psi_http_image_server:latest
     container_name: psi-http
     restart: unless-stopped
     ports:
@@ -41,7 +35,7 @@ volumes:
   psi-http-images:
   psi-http-letsencrypt:
 
-    # Секреты из ./secrets/ (скопируйте из secrets.example/ при первом деплое)
+    # Секреты из ./secrets/
 secrets:
   psi_chat_bot:
     file: ./secrets/psi_chat_bot.txt
