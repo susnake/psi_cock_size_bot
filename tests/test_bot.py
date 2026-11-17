@@ -26,10 +26,22 @@ def clean_state(monkeypatch, tmp_path):
 
 
 # ─────────── Хуеметр ───────────
-def test_cock_weights_strictly_decreasing():
+def test_growth_tables_are_probabilities():
+    for vs, ws in [(m.COCK_VALUES, m.COCK_WEIGHTS), (m.W_VALUES, m.W_WEIGHTS),
+                   (m.IQ_VALUES, m.IQ_WEIGHTS), (m.H_VALUES, m.H_WEIGHTS)]:
+        assert len(vs) == len(ws)
+        assert abs(sum(ws) - 1) < 1e-9
+        assert all(w >= 0 for w in ws)
+
+
+def test_cock_growth_step_chances():
+    # шаги проходят с шансом 99%, 97%, 95%, ...: P(2 см) / P(1 см) и т.д. по формуле
     w = m.COCK_WEIGHTS
-    assert len(w) == 51
-    assert all(w[i] > w[i + 1] for i in range(50))
+    # P(=k) ∝ reach(k) * (1 - p_k); reach(1)=0.99, reach(2)=0.99*0.97
+    assert abs(w[1] / w[2] - (0.99 * 0.03) / (0.99 * 0.97 * 0.05)) < 1e-9
+    # 0 см так же редко, как 50 см
+    assert w[0] == w[50]
+    assert w[0] < 1e-12
 
 
 def test_cock_distribution():
@@ -37,10 +49,10 @@ def test_cock_distribution():
     c = Counter(m.gen_c()[0] for _ in range(n))
     assert min(c) >= 0 and max(c) <= 50
     share = lambda lo: sum(v for k, v in c.items() if k >= lo) / n
-    assert 0.35 < share(20) < 0.39     # ожидаем ≈ 37%
-    assert 0.040 < share(40) < 0.054   # ожидаем ≈ 4.7%
-    # чем больше, тем реже
-    assert c[0] > c[10] > c[20] > c[30] > c[40] > c[50]
+    assert 0.32 < share(10) < 0.36     # ожидаем ≈ 34%
+    assert 0.07 < share(15) < 0.092    # ожидаем ≈ 8%
+    assert 0.006 < share(20) < 0.013   # ожидаем ≈ 0.9%
+    assert share(30) < 0.0005          # практически никогда
 
 
 def test_every_cock_value_has_emoji():
@@ -57,12 +69,23 @@ def test_other_generators_in_range_with_emoji(gen, lo, hi, table):
         assert e == m._emo(v, m.EMO[table]) and e
 
 
-@pytest.mark.parametrize("gen, lo, hi", [(m.gen_w, 0, 250), (m.gen_iq, 50, 200), (m.gen_h, 140, 220)])
-def test_other_generators_linear_decrease(gen, lo, hi):
+@pytest.mark.parametrize("gen, values, weights", [
+    (m.gen_w, m.W_VALUES, m.W_WEIGHTS), (m.gen_iq, m.IQ_VALUES, m.IQ_WEIGHTS),
+    (m.gen_h, m.H_VALUES, m.H_WEIGHTS),
+])
+def test_other_generators_follow_table(gen, values, weights):
     n = 100_000
     xs = [gen()[0] for _ in range(n)]
-    upper_half = sum(1 for x in xs if x >= (lo + hi) / 2) / n
-    assert 0.23 < upper_half < 0.29     # верхняя половина диапазона ≈ 26%
+    # медиана по таблице: половина результатов не больше её
+    acc = 0
+    for v, w in zip(values, weights):
+        acc += w
+        if acc >= 0.5:
+            med = v
+            break
+    below = sum(1 for x in xs if x <= med) / n
+    expected = sum(w for v, w in zip(values, weights) if v <= med)
+    assert abs(below - expected) < 0.01
 
 
 # ─────────── Кэш ───────────

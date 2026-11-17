@@ -237,23 +237,36 @@ def _emo(val: int, tbl: dict) -> str:
     return ""
 
 
-# Все четыре значения: чем больше, тем реже. Вес шанса падает по прямой:
-# у минимума диапазона 99, у максимума 1, между ними — равномерно.
-# Например хуй 0–50 см: 0 см выпадает в 99 раз чаще, чем 50 см (таблица — в README).
-FIRST_WEIGHT = 99
-LAST_WEIGHT = 1
+# Все четыре значения «растут» от минимума диапазона по одной единице.
+# Каждый следующий шаг проходит с шансом, который падает по прямой от 99% до 1%:
+# хуй 0–50 см — 1-й сантиметр с шансом 99%, 2-й — 97%, 3-й — 95%, ..., 50-й — 1%.
+# Минимум (0 см) выпадает так же редко, как максимум (50 см) — практически никогда.
+# Где шаг не прошёл — там и остановились. Итого для хуя: обычно около 8 см,
+# 15 см и больше ≈ 8.5%, 20 см и больше ≈ 1% (таблица — в README).
+FIRST_STEP_CHANCE = 0.99
+LAST_STEP_CHANCE = 0.01
 
 
-def _linear_table(lo: int, hi: int):
-    values = list(range(lo, hi + 1))
-    step = (FIRST_WEIGHT - LAST_WEIGHT) / (hi - lo)
-    return values, [FIRST_WEIGHT - step * (v - lo) for v in values]
+def _growth_table(lo: int, hi: int):
+    """Точные вероятности для «роста по шагам»: values и веса = вероятности."""
+    n = hi - lo
+    step = (FIRST_STEP_CHANCE - LAST_STEP_CHANCE) / (n - 1)
+    probs, reach = [], 1.0          # reach — шанс дойти до текущего значения
+    for k in range(n):
+        p_next = FIRST_STEP_CHANCE - step * k
+        probs.append(reach * (1 - p_next))   # дошли до k и дальше не прошли
+        reach *= p_next
+    probs.append(reach)                       # дошли до максимума
+    # минимум (0 см) выпадает так же редко, как максимум (50 см)
+    probs[0] = probs[-1]
+    total = sum(probs)
+    return list(range(lo, hi + 1)), [x / total for x in probs]
 
 
-W_VALUES, W_WEIGHTS = _linear_table(0, 250)          # вес, кг
-COCK_VALUES, COCK_WEIGHTS = _linear_table(0, 50)     # хуй, см
-IQ_VALUES, IQ_WEIGHTS = _linear_table(50, 200)       # IQ
-H_VALUES, H_WEIGHTS = _linear_table(140, 220)        # рост, см
+W_VALUES, W_WEIGHTS = _growth_table(0, 250)          # вес, кг
+COCK_VALUES, COCK_WEIGHTS = _growth_table(0, 50)     # хуй, см
+IQ_VALUES, IQ_WEIGHTS = _growth_table(50, 200)       # IQ
+H_VALUES, H_WEIGHTS = _growth_table(140, 220)        # рост, см
 
 
 def _pick(values, weights) -> int:
