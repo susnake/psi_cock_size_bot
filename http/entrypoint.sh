@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 set -e
 
 # Функция для логирования с timestamp
@@ -100,8 +100,8 @@ cat > /etc/apache2/sites-available/ssl-site.conf << EOF
     SSLCertificateKeyFile $KEY_FILE
     
     <Directory /var/www/html>
-        Options Indexes FollowSymLinks
-        AllowOverride All
+        Options FollowSymLinks
+        AllowOverride None
         Require all granted
     </Directory>
     
@@ -125,10 +125,16 @@ if ! apache2ctl configtest; then
     exit 1
 fi
 
-# 9. Запускаем cron для обновления сертификатов
-log "Запуск cron..."
-cron 2>/dev/null || true
+# 9. Каталог картинок: volume мог быть создан от root, Apache пишет от www-data
+mkdir -p /var/www/html/images
+chown www-data:www-data /var/www/html/images
 
-# 10. Запускаем Apache
+# 10. Запускаем cron (очистка картинок + certbot renew, см. /etc/cron.d/psi-http)
+log "Запуск cron..."
+if ! cron; then
+    log "ПРЕДУПРЕЖДЕНИЕ: cron не запустился — картинки не будут чиститься, сертификат не будет продлеваться."
+fi
+
+# 11. Запускаем Apache
 log "Запуск Apache..."
 exec apache2-foreground

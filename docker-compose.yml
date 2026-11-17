@@ -9,10 +9,9 @@ services:
     secrets:
       - psi_chat_bot
       - GEMINI_API_KEY
-      - GOOGLE_API_KEY
-      - GOOGLE_CSE_ID
       - STORAGE_CHAT_ID
       - IMAGE_SERVER_URL
+      - UPLOAD_TOKEN
 
   # ─────────── HTTP-сервер для изображений ───────────
   psi-http:
@@ -25,6 +24,7 @@ services:
     secrets:
       - IMAGE_SERVER_URL
       - SSL_EMAIL
+      - UPLOAD_TOKEN
     volumes:
       - psi-http-images:/var/www/html/images
       - psi-http-letsencrypt:/etc/letsencrypt
@@ -35,19 +35,17 @@ volumes:
   psi-http-images:
   psi-http-letsencrypt:
 
-    # Секреты
+# Секреты
 secrets:
   psi_chat_bot:
     file: ./secrets/psi_chat_bot.txt
   GEMINI_API_KEY:
     file: ./secrets/GEMINI_API_KEY.txt
-  GOOGLE_API_KEY:
-    file: ./secrets/GOOGLE_API_KEY.txt
-  GOOGLE_CSE_ID:
-    file: ./secrets/GOOGLE_CSE_ID.txt
   STORAGE_CHAT_ID:
     file: ./secrets/STORAGE_CHAT_ID.txt
   IMAGE_SERVER_URL:
     file: ./secrets/IMAGE_SERVER_URL.txt
   SSL_EMAIL:
     file: ./secrets/SSL_EMAIL.txt
+  UPLOAD_TOKEN:
+    file: ./secrets/UPLOAD_TOKEN.txt

@@ -1,8 +1,9 @@
 FROM php:8.2-apache
 
-# Устанавливаем системные зависимости
+# Устанавливаем системные зависимости (cron — для очистки картинок и продления сертификата)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+    cron \
     python3-pip \
     python3-venv \
     build-essential \
@@ -20,18 +21,24 @@ RUN python3 -m venv /opt/certbot/ && \
     /opt/certbot/bin/pip install --no-cache-dir certbot certbot-apache && \
     ln -s /opt/certbot/bin/certbot /usr/bin/certbot
 
-# Копируем файлы сайта
-COPY . /var/www/html/
+# В webroot кладём только upload.php (раньше туда копировалась вся папка,
+# включая Dockerfile и скрипты)
+COPY upload.php /var/www/html/
+RUN mkdir -p /var/www/html/images && chown www-data:www-data /var/www/html/images
 
-# Включаем модули Apache и SSL сайт
+# Включаем модули Apache и SSL сайт, общий hardening-конфиг
+COPY hardening.conf /etc/apache2/conf-available/hardening.conf
 RUN a2enmod rewrite ssl headers socache_shmcb && \
-    a2ensite default-ssl
+    a2ensite default-ssl && \
+    a2enconf hardening
 
-# Копируем скрипты и конвертируем line endings
+# Скрипты и cron; убираем CRLF/BOM
 COPY entrypoint.sh /
 COPY cleanup_images.sh /
-RUN dos2unix /entrypoint.sh /cleanup_images.sh && \
-    chmod +x /entrypoint.sh /cleanup_images.sh
+COPY crontab /etc/cron.d/psi-http
+RUN dos2unix /entrypoint.sh /cleanup_images.sh /etc/cron.d/psi-http && \
+    chmod +x /entrypoint.sh /cleanup_images.sh && \
+    chmod 0644 /etc/cron.d/psi-http
 
 EXPOSE 80
 EXPOSE 443
