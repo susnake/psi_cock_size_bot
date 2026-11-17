@@ -50,8 +50,11 @@ log = logging.getLogger("psi_chat_bot")
 
 
 def get_secret(name: str, default: str = None) -> str:
-    """Читает секрет из Docker Secrets файла или переменной окружения."""
-    # Сначала пробуем Docker Secrets (файл)
+    """
+    Читает секрет из Docker Secrets файла или переменной окружения.
+    В контейнере бот работает от uid 1000 и файлы с правами 600 root прочитать не может —
+    их заранее (от root) переносит в окружение docker-entrypoint.sh. Это штатный путь.
+    """
     secret_path = f"/run/secrets/{name}"
     try:
         with open(secret_path, 'r') as f:
@@ -59,13 +62,13 @@ def get_secret(name: str, default: str = None) -> str:
             if value:
                 log.info(f"Секрет '{name}' загружен из Docker Secrets")
                 return value
-    except FileNotFoundError:
+    except (FileNotFoundError, PermissionError):
         pass
     except Exception as e:
         log.warning(f"Ошибка чтения секрета '{name}' из файла: {e}")
 
-    # Fallback на переменную окружения
-    value = os.getenv(name)
+    # Переменная окружения (в т.ч. выставленная docker-entrypoint.sh)
+    value = (os.getenv(name) or "").strip()
     if value:
         log.info(f"Секрет '{name}' загружен из переменной окружения")
     return value or default
@@ -75,10 +78,8 @@ def get_secret(name: str, default: str = None) -> str:
 API_TOKEN = get_secret("psi_chat_bot")
 GEMINI_API_KEY = get_secret("GEMINI_API_KEY")
 
-# Режимы хостинга изображений
-STORAGE_CHAT_ID = get_secret("STORAGE_CHAT_ID")  # ID канала для хранения (Storage Mode)
-IMAGE_SERVER_URL = get_secret("IMAGE_SERVER_URL")  # URL HTTP-сервера (HTTP Mode)
-UPLOAD_TOKEN = get_secret("UPLOAD_TOKEN")  # общий токен бота и upload.php
+# Хостинг изображений: служебный канал Telegram (Storage Mode) или только память
+STORAGE_CHAT_ID = get_secret("STORAGE_CHAT_ID")
 
 if not API_TOKEN:
     sys.exit("❌ psi_chat_bot не найден (ни в Docker Secrets, ни в переменных окружения)")
@@ -86,13 +87,8 @@ if not API_TOKEN:
 if not GEMINI_API_KEY:
     log.warning("⚠️ GEMINI_API_KEY не найден. Функции Gemini не будут работать.")
 
-# Определяем режим хостинга
 if STORAGE_CHAT_ID:
-    log.info(f"Режим хостинга: Storage Mode (канал {STORAGE_CHAT_ID})")
-elif IMAGE_SERVER_URL:
-    log.info(f"Режим хостинга: HTTP Mode ({IMAGE_SERVER_URL})")
-    if not UPLOAD_TOKEN:
-        log.warning("⚠️ UPLOAD_TOKEN не задан — upload.php будет отклонять загрузки.")
+    log.info("Режим хостинга: Storage Mode (служебный канал)")
 else:
     log.info("Режим хостинга: In-Memory (изображения не сохраняются)")
 
@@ -463,65 +459,16 @@ async def upload_to_storage(img_data: bytes, filename: str) -> Optional[str]:
         return None
 
 
-async def upload_to_http_server(
-    session: aiohttp.ClientSession,
-    img_data: bytes,
-    filename: str
-) -> Optional[str]:
-    """
-    HTTP Mode: Загружает изображение на HTTP-сервер.
-    Возвращает URL изображения.
-    """
-    if not IMAGE_SERVER_URL:
-        return None
-
-    if not UPLOAD_TOKEN:
-        log.warning("HTTP upload пропущен: UPLOAD_TOKEN не задан.")
-        return None
-
-    try:
-        upload_url = f"{IMAGE_SERVER_URL.rstrip('/')}/upload.php"
-
-        form = aiohttp.FormData()
-        form.add_field(
-            'image',  # имя поля должно совпадать с $_FILES['image'] в upload.php
-            img_data,
-            filename=filename,
-            content_type=image_mime(img_data)
-        )
-
-        async with session.post(
-            upload_url, data=form, headers={"X-Upload-Token": UPLOAD_TOKEN}, timeout=30
-        ) as resp:
-            if resp.status == 200:
-                result = await resp.json(content_type=None)
-                if result.get('success') and result.get('url'):
-                    url = result['url']
-                    log.info(f"Изображение загружено на HTTP-сервер: {url}")
-                    return url
-            log.error(f"HTTP upload failed: {resp.status} - {(await resp.text())[:300]}")
-            return None
-    except Exception as e:
-        log.error(f"Ошибка загрузки на HTTP-сервер: {e}")
-        return None
-
-
 async def store_image(img_data: bytes, uid: int) -> Optional[str]:
     """
-    Сохраняет изображение согласно настроенному режиму хостинга.
-    Возвращает file_id или URL, или None для In-Memory режима.
+    Storage Mode: загружает картинку в служебный канал и возвращает file_id.
+    In-Memory (STORAGE_CHAT_ID не задан): None, картинка шлётся байтами.
     """
+    if not STORAGE_CHAT_ID:
+        return None
     ext = "jpg" if image_mime(img_data) == "image/jpeg" else "png"
     filename = f"whoami_{uid}_{int(datetime.now().timestamp())}.{ext}"
-
-    if STORAGE_CHAT_ID:
-        return await upload_to_storage(img_data, filename)
-
-    if IMAGE_SERVER_URL:
-        async with aiohttp.ClientSession() as session:
-            return await upload_to_http_server(session, img_data, filename)
-
-    return None  # In-Memory режим
+    return await upload_to_storage(img_data, filename)
 
 
 
@@ -859,8 +806,8 @@ async def safe_cb_answer(cb: types.CallbackQuery, text: Optional[str] = None):
 
 async def send_whoami_photo(chat_id: int, img_data: bytes, img_ref: Optional[str], caption: str):
     """
-    Отправляет картинку: по file_id (Storage Mode) или URL (HTTP Mode),
-    а если ссылки нет или она не сработала — загружает байты напрямую.
+    Отправляет картинку по file_id (Storage Mode), а если его нет
+    или он не сработал — загружает байты напрямую.
     """
     if img_ref:
         try:

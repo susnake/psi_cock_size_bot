@@ -1,8 +1,0 @@
-SHELL=/bin/bash
-PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-
-# Удаление картинок старше 6 часов
-*/15 * * * * root /cleanup_images.sh >/proc/1/fd/1 2>&1
-
-# Продление сертификата через webroot (Apache уже занимает порт 80, standalone не подойдёт)
-17 3,15 * * * root certbot renew --quiet --webroot -w /var/www/html --deploy-hook "apache2ctl graceful" >/proc/1/fd/1 2>&1

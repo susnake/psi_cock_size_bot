@@ -18,9 +18,7 @@
   * Кэширование результатов на **6 часов** с персистентностью
   * Генерация аватаров через Gemini (с fallback на PIL)
 
-* **Два Docker-контейнера:**
-  * **bot** — Telegram-бот (Python/aiogram)
-  * **http** — PHP-сервер с SSL для хостинга изображений (опционально)
+* **Один Docker-контейнер** — Telegram-бот (Python/aiogram)
 
 ## 🔑 Настройка
 
@@ -38,22 +36,18 @@
 mkdir -p secrets
 echo -n "YOUR_TELEGRAM_TOKEN" > secrets/psi_chat_bot.txt
 echo -n "YOUR_GEMINI_KEY" > secrets/GEMINI_API_KEY.txt
-echo -n "-100XXXXXXXXXX" > secrets/STORAGE_CHAT_ID.txt     # Storage Mode (опционально)
-echo -n "https://your.domain" > secrets/IMAGE_SERVER_URL.txt  # HTTP Mode (опционально)
-echo -n "you@example.com" > secrets/SSL_EMAIL.txt          # для Let's Encrypt
-openssl rand -hex 32 | tr -d '\n' > secrets/UPLOAD_TOKEN.txt  # общий токен бота и upload.php
-chmod 644 secrets/*.txt  # бот работает от uid 1000 и должен читать секреты
+echo -n "-100XXXXXXXXXX" > secrets/STORAGE_CHAT_ID.txt  # опционально, см. ниже
+chmod 600 secrets/*.txt  # достаточно root: бот получит значения через entrypoint
 ```
 
 > ⚠️ **Важно:** Файлы должны содержать ТОЛЬКО токен — без пробелов, кавычек и переносов строк!
 >
-> Docker Compose требует, чтобы существовали все файлы из `secrets:` в `docker-compose.yml`. Неиспользуемые можно оставить пустыми.
+> Docker Compose требует, чтобы существовали все файлы из `secrets:` в `docker-compose.yml`. `STORAGE_CHAT_ID.txt` можно оставить пустым.
 
 ### Хостинг картинок «Хто Я?»
 
-* **Storage Mode** (`STORAGE_CHAT_ID` задан): картинка один раз загружается в служебный канал, дальше отправляется по `file_id`.
-* **HTTP Mode** (`IMAGE_SERVER_URL` задан, `STORAGE_CHAT_ID` пуст): картинка загружается в `upload.php` с заголовком `X-Upload-Token`, Telegram забирает её по URL. Без `UPLOAD_TOKEN` сервер загрузки отклоняет.
-* **In-Memory**: ничего не задано — картинка шлётся байтами, кэш только в памяти.
+* **Storage Mode** (`STORAGE_CHAT_ID` задан): картинка один раз загружается в служебный канал (бот должен быть в нём админом), дальше отправляется по `file_id`.
+* **In-Memory** (`STORAGE_CHAT_ID` пуст): картинка шлётся байтами, кэш только в памяти.
 
 ### 3. /proof
 
@@ -107,16 +101,9 @@ python psi_chat_bot.py
 psi_cock_size_bot/
 ├── bot/
 │   ├── Dockerfile
-│   ├── docker-entrypoint.sh # chown /app/data и сброс привилегий
+│   ├── docker-entrypoint.sh # секреты → окружение, chown /app/data, сброс привилегий
 │   ├── psi_chat_bot.py      # Основной код бота
 │   └── requirements.txt
-├── http/                     # HTTP-сервер (опционально)
-│   ├── Dockerfile
-│   ├── entrypoint.sh
-│   ├── cleanup_images.sh
-│   ├── crontab              # очистка картинок + certbot renew
-│   ├── hardening.conf       # Apache: без листинга, без PHP в /images
-│   └── upload.php
 ├── secrets/                  # 🔒 Токены (не в git!), образец — secrets.example/
 ├── tests/                    # pytest
 ├── requirements-dev.txt      # pytest
@@ -145,7 +132,6 @@ pytest tests
 * Значения и изображения кэшируются на 6 часов
 * Кэш значений сохраняется в `/app/data/cache.json`, протухшие записи чистятся раз в 30 минут
 * При перезапуске кэш значений восстанавливается (картинки — нет, они перегенерируются)
-* HTTP-сервер удаляет картинки старше 6 часов (cron, каждые 15 минут) и продлевает сертификат дважды в сутки
 
 ### Распределение «Хуеметра»
 
@@ -205,9 +191,11 @@ pytest tests
 * Токены хранятся в Docker Secrets
 * Папка `secrets/` в `.gitignore`
 * Ключ Gemini передаётся заголовком `x-goog-api-key`, а не в URL (не попадает в логи)
-* Бот работает от непривилегированного пользователя (uid 1000)
-* SSL для HTTP-сервера через Let's Encrypt
-* `upload.php`: обязательный токен, только PNG/JPEG (проверка содержимого), имя файла генерирует сервер; в `/images` отключены PHP и листинг каталога
+* Файлы секретов на хосте могут быть `600 root`: `docker-entrypoint.sh` читает их от root
+  и передаёт боту через окружение процесса (не на диск и не в аргументы, без `eval`),
+  затем `setpriv --no-new-privs` сбрасывает права до uid 1000
+* `chown` в `/app/data` — через `find -xdev ... chown -h`: не идёт по символьным ссылкам и не выходит за volume
+* В compose: `cap_drop: ALL` (оставлены только `CHOWN`, `SETUID`, `SETGID` для старта) и `no-new-privileges`
 
 ## ⚖️ Лицензия
 

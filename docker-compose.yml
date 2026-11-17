@@ -10,32 +10,22 @@ services:
       - psi_chat_bot
       - GEMINI_API_KEY
       - STORAGE_CHAT_ID
-      - IMAGE_SERVER_URL
-      - UPLOAD_TOKEN
-
-  # ─────────── HTTP-сервер для изображений ───────────
-  psi-http:
-    image: susnake/psi_http_image_server:latest
-    container_name: psi-http
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    secrets:
-      - IMAGE_SERVER_URL
-      - SSL_EMAIL
-      - UPLOAD_TOKEN
-    volumes:
-      - psi-http-images:/var/www/html/images
-      - psi-http-letsencrypt:/etc/letsencrypt
+    # Минимум прав. Root внутри контейнера нужен только entrypoint'у на старте:
+    # прочитать секреты (600 root на хосте), chown /app/data и сбросить права до uid 1000.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN    # chown файлов в /app/data
+      - SETUID   # setpriv --reuid
+      - SETGID   # setpriv --regid / --init-groups
 
 # Volumes
 volumes:
   psi-bot-data:
-  psi-http-images:
-  psi-http-letsencrypt:
 
-# Секреты
+# Секреты (файлы могут иметь права 600 root — entrypoint прочитает их до сброса прав)
 secrets:
   psi_chat_bot:
     file: ./secrets/psi_chat_bot.txt
@@ -43,9 +33,3 @@ secrets:
     file: ./secrets/GEMINI_API_KEY.txt
   STORAGE_CHAT_ID:
     file: ./secrets/STORAGE_CHAT_ID.txt
-  IMAGE_SERVER_URL:
-    file: ./secrets/IMAGE_SERVER_URL.txt
-  SSL_EMAIL:
-    file: ./secrets/SSL_EMAIL.txt
-  UPLOAD_TOKEN:
-    file: ./secrets/UPLOAD_TOKEN.txt

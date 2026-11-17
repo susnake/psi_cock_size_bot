@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 
 os.environ["psi_chat_bot"] = "123456:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-for _name in ("GEMINI_API_KEY", "STORAGE_CHAT_ID", "IMAGE_SERVER_URL", "UPLOAD_TOKEN"):
+for _name in ("GEMINI_API_KEY", "STORAGE_CHAT_ID"):
     os.environ[_name] = ""
 
 os.chdir(tempfile.mkdtemp(prefix="psi_bot_tests_"))
