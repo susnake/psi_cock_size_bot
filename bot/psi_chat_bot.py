@@ -237,42 +237,46 @@ def _emo(val: int, tbl: dict) -> str:
     return ""
 
 
-def _bell(mu: float, sigma: float, lo: int, hi: int, tail: float = 0.03) -> int:
-    """
-    Обычно значение около mu (нормальное распределение, обрезанное до [lo, hi]).
-    С шансом tail — любое значение из [lo, hi], чтобы крайности были редкими, но возможными.
-    """
-    if random.random() < tail:
-        return random.randint(lo, hi)
-    return min(max(round(random.gauss(mu, sigma)), lo), hi)
+# Все четыре значения: чем больше, тем реже. Вес шанса падает по прямой:
+# у минимума диапазона 99, у максимума 1, между ними — равномерно.
+# Например хуй 0–50 см: 0 см выпадает в 99 раз чаще, чем 50 см (таблица — в README).
+FIRST_WEIGHT = 99
+LAST_WEIGHT = 1
+
+
+def _linear_table(lo: int, hi: int):
+    values = list(range(lo, hi + 1))
+    step = (FIRST_WEIGHT - LAST_WEIGHT) / (hi - lo)
+    return values, [FIRST_WEIGHT - step * (v - lo) for v in values]
+
+
+W_VALUES, W_WEIGHTS = _linear_table(0, 250)          # вес, кг
+COCK_VALUES, COCK_WEIGHTS = _linear_table(0, 50)     # хуй, см
+IQ_VALUES, IQ_WEIGHTS = _linear_table(50, 200)       # IQ
+H_VALUES, H_WEIGHTS = _linear_table(140, 220)        # рост, см
+
+
+def _pick(values, weights) -> int:
+    return random.choices(values, weights=weights)[0]
 
 
 def gen_w():
-    v = _bell(78, 18, 0, 250)
+    v = _pick(W_VALUES, W_WEIGHTS)
     return v, _emo(v, EMO["w"])
 
 
-# Чем длиннее, тем реже: вес каждого следующего сантиметра в COCK_DECAY раз меньше.
-# При 0.5 каждый следующий сантиметр вдвое реже: 0 см 50%, 1 см 25%, 2 см 12.5%, ...
-# (таблица — в README). 5 см и больше ≈ 3.1%, 10 см и больше ≈ 0.1%.
-# Больше COCK_DECAY (напр. 0.7) — длинные чаще, меньше — реже.
-COCK_DECAY = 0.5
-COCK_VALUES = list(range(0, 51))
-COCK_WEIGHTS = [COCK_DECAY ** v for v in COCK_VALUES]
-
-
 def gen_c():
-    v = random.choices(COCK_VALUES, weights=COCK_WEIGHTS)[0]
+    v = _pick(COCK_VALUES, COCK_WEIGHTS)
     return v, _emo(v, EMO["c"])
 
 
 def gen_iq():
-    v = _bell(100, 15, 50, 200)
+    v = _pick(IQ_VALUES, IQ_WEIGHTS)
     return v, _emo(v, EMO["iq"])
 
 
 def gen_h():
-    v = _bell(176, 9, 140, 220)
+    v = _pick(H_VALUES, H_WEIGHTS)
     return v, _emo(v, EMO["h"])
 
 

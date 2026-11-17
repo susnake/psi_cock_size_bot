@@ -37,11 +37,10 @@ def test_cock_distribution():
     c = Counter(m.gen_c()[0] for _ in range(n))
     assert min(c) >= 0 and max(c) <= 50
     share = lambda lo: sum(v for k, v in c.items() if k >= lo) / n
-    assert 0.48 < share(1) < 0.52       # ожидаем ≈ 50%
-    assert 0.027 < share(5) < 0.036     # ожидаем ≈ 3.1%
-    assert share(10) < 0.002            # ожидаем ≈ 0.1%
+    assert 0.35 < share(20) < 0.39     # ожидаем ≈ 37%
+    assert 0.040 < share(40) < 0.054   # ожидаем ≈ 4.7%
     # чем больше, тем реже
-    assert c[0] > c[1] > c[2] > c[3] > c[4] > c[5]
+    assert c[0] > c[10] > c[20] > c[30] > c[40] > c[50]
 
 
 def test_every_cock_value_has_emoji():
@@ -58,11 +57,12 @@ def test_other_generators_in_range_with_emoji(gen, lo, hi, table):
         assert e == m._emo(v, m.EMO[table]) and e
 
 
-def test_weight_is_bell_shaped():
+@pytest.mark.parametrize("gen, lo, hi", [(m.gen_w, 0, 250), (m.gen_iq, 50, 200), (m.gen_h, 140, 220)])
+def test_other_generators_linear_decrease(gen, lo, hi):
     n = 100_000
-    xs = [m.gen_w()[0] for _ in range(n)]
-    assert sum(1 for x in xs if x >= 150) / n < 0.03
-    assert sum(1 for x in xs if 50 <= x <= 99) / n > 0.7
+    xs = [gen()[0] for _ in range(n)]
+    upper_half = sum(1 for x in xs if x >= (lo + hi) / 2) / n
+    assert 0.23 < upper_half < 0.29     # верхняя половина диапазона ≈ 26%
 
 
 # ─────────── Кэш ───────────
