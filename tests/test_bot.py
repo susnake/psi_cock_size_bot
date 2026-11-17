@@ -37,10 +37,11 @@ def test_cock_distribution():
     c = Counter(m.gen_c()[0] for _ in range(n))
     assert min(c) >= 0 and max(c) <= 50
     share = lambda lo: sum(v for k, v in c.items() if k >= lo) / n
-    assert 0.10 < share(20) < 0.135     # ожидаем ≈ 11.7%
-    assert 0.025 < share(30) < 0.05     # ожидаем ≈ 3.8%
-    # чем больше, тем реже — на крупных точках с запасом на шум
-    assert c[0] > c[5] > c[10] > c[20] > c[30]
+    assert 0.48 < share(1) < 0.52       # ожидаем ≈ 50%
+    assert 0.027 < share(5) < 0.036     # ожидаем ≈ 3.1%
+    assert share(10) < 0.002            # ожидаем ≈ 0.1%
+    # чем больше, тем реже
+    assert c[0] > c[1] > c[2] > c[3] > c[4] > c[5]
 
 
 def test_every_cock_value_has_emoji():

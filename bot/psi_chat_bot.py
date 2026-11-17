@@ -253,11 +253,10 @@ def gen_w():
 
 
 # Чем длиннее, тем реже: вес каждого следующего сантиметра в COCK_DECAY раз меньше.
-# При 0.90 шанс конкретного значения: 0 см 10.05%, 1 см 9.04%, 5 см 5.93%,
-# 10 см 3.50%, 20 см 1.22%, 30 см 0.43%, 40 см 0.15%, 50 см 0.05%
-# (полная таблица — в README). Итого 20 см и больше ≈ 11.7%, 30 см и больше ≈ 3.8%.
-# Больше COCK_DECAY (напр. 0.92) — длинные чаще, меньше (0.88) — реже.
-COCK_DECAY = 0.90
+# При 0.5 каждый следующий сантиметр вдвое реже: 0 см 50%, 1 см 25%, 2 см 12.5%, ...
+# (таблица — в README). 5 см и больше ≈ 3.1%, 10 см и больше ≈ 0.1%.
+# Больше COCK_DECAY (напр. 0.7) — длинные чаще, меньше — реже.
+COCK_DECAY = 0.5
 COCK_VALUES = list(range(0, 51))
 COCK_WEIGHTS = [COCK_DECAY ** v for v in COCK_VALUES]
 
@@ -389,6 +388,7 @@ def render_pil(ctx: dict) -> io.BytesIO:
     try:
         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
     except IOError:
+        log.warning("Шрифт DejaVuSans не найден — кириллица на резервной картинке будет квадратами")
         font = ImageFont.load_default()
 
     img = Image.new("RGB", (400, 400), "white")
@@ -416,11 +416,11 @@ def render_pil(ctx: dict) -> io.BytesIO:
     d.line((200, 250, 200, 250 + ctx['c']), fill="black", width=2)
 
     # Статы
-    y = 330
+    y = 306
     for t in (f"Вес: {ctx['w']} кг", f"Длина: {ctx['c']} см",
               f"IQ: {ctx['iq']}", f"Рост: {ctx['h']} см"):
         d.text((10, y), t, font=font, fill="black")
-        y += 18
+        y += 22
 
     bio = io.BytesIO()
     img.save(bio, "PNG")

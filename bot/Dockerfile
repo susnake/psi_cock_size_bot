@@ -2,14 +2,17 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# fonts-dejavu-core — шрифт с кириллицей для резервной картинки (PIL), в slim-образе шрифтов нет.
 # setpriv и find нужны docker-entrypoint.sh. В части версий Debian setpriv
 # вынесен в отдельный пакет — доставляем, если его нет; если не удалось, сборка упадёт.
-RUN if ! command -v setpriv >/dev/null || ! command -v find >/dev/null; then \
-        apt-get update && \
-        apt-get install -y --no-install-recommends setpriv findutils && \
-        rm -rf /var/lib/apt/lists/*; \
-    fi && \
-    command -v setpriv && command -v find
+RUN pkgs="fonts-dejavu-core"; \
+    command -v setpriv >/dev/null || pkgs="$pkgs setpriv"; \
+    command -v find >/dev/null || pkgs="$pkgs findutils"; \
+    apt-get update && \
+    apt-get install -y --no-install-recommends $pkgs && \
+    rm -rf /var/lib/apt/lists/* && \
+    command -v setpriv && command -v find && \
+    test -f /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
